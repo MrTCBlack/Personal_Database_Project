@@ -96,10 +96,12 @@ public class StorageManager {
                 Catalog.setIndex(false);
             }
 
-            for (int i = 0; i < numTables; i++){
-                int tableId = buffer.getInt();
-                int nodePointer = buffer.getInt();
-                treeNodes.put(tableId, nodePointer);
+            if (Catalog.isIndexOn()){
+                for (int i = 0; i < numTables; i++){
+                    int tableId = buffer.getInt();
+                    int nodePointer = buffer.getInt();
+                    treeNodes.put(tableId, nodePointer);
+                }
             }
         
             for (int i = 0; i < numTables; i++) {

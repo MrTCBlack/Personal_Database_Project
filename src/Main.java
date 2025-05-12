@@ -19,11 +19,16 @@ public class Main {
 
     public static void main(String[] args) {
         System.out.println("Welcome to the database!");
-        String db_loc = args[0];
+        /*String db_loc = args[0];
         int pageSize = Integer.valueOf(args[1]);
         int bufferSize = Integer.valueOf(args[2]);
         
-        String index_check = args[3];
+        String index_check = args[3];*/
+        String db_loc = "C:\\Users\\Tyler\\Desktop\\College Folders\\Personal Database Project\\Personal_Database_Project\\databaseLoc\\";
+        int pageSize = 250;
+        int bufferSize = 10;
+        String index_check = "false";
+
         boolean index = false;
         if(index_check.equals("true") || index_check.equals("false")){
             index = Boolean.valueOf(index_check);
