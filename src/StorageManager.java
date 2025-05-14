@@ -55,7 +55,7 @@ public class StorageManager {
         // current number of tables
         ByteBuffer buffer = ByteBuffer.allocate(9);
         buffer.putInt(pageSize); //pageSize
-        buffer.putInt(0);   //starting number of pages
+        buffer.putInt(0);   //starting number of tables
         if (indexOn){
             buffer.put((byte)1);
         }else{
@@ -78,7 +78,8 @@ public class StorageManager {
      * @return oldPageSize - the page size that was read from the Catalog
      * @throws IOException
      */
-    public static int loadCatalogFromFile(Map<Integer, TableSchema> tableSchemasByNum, Map<String, TableSchema> tableSchemasByName, Map<Integer, Integer> treeNodes, File catalogFile) throws IOException{
+    public static int loadCatalogFromFile(Map<Integer, TableSchema> tableSchemasByNum, Map<String, TableSchema> tableSchemasByName, 
+                                            Map<Integer, Integer> treeNodes, Map<Integer, Integer> tableNumPages, File catalogFile) throws IOException{
         try (RandomAccessFile raf = new RandomAccessFile(catalogFile, "r");
             FileChannel channel = raf.getChannel()) {
             ByteBuffer buffer = ByteBuffer.allocate((int) catalogFile.length());
@@ -97,13 +98,22 @@ public class StorageManager {
             }
 
             if (Catalog.isIndexOn()){
+                //Read in BplusTreeNode root from catalog
                 for (int i = 0; i < numTables; i++){
                     int tableId = buffer.getInt();
                     int nodePointer = buffer.getInt();
                     treeNodes.put(tableId, nodePointer);
                 }
             }
+
+            //Read in number of pages for tables from catalog
+            for (int i = 0; i < numTables; i++){
+                int tableId = buffer.getInt();
+                int numPages = buffer.getInt();
+                tableNumPages.put(tableId, numPages);
+            }
         
+            //Read in table name and table schema from catalog
             for (int i = 0; i < numTables; i++) {
                 int tableNum = buffer.getInt();
                 int tableNameLength = buffer.getInt();
@@ -172,11 +182,13 @@ public class StorageManager {
      * @param tableSchemasByName a Map of TableName to TableSchema
      * @throws IOException
      */
+    //TODO: COME BACK AND REWORK SO THAT IT TAKES UP LESS SPACE
     public static void saveCatalog(String catalogFile, int pageSize, 
-                                    Map<Integer, TableSchema> tableSchemasByNum,
-                                    Map<String, TableSchema> tableSchemasByName, Map<Integer, Integer> treeNodes, boolean indexOn) throws IOException {
+                                    Map<Integer, TableSchema> tableSchemasByNum, Map<String, TableSchema> tableSchemasByName,
+                                    Map<Integer, Integer> treeNodes, Map<Integer, Integer> tableNumPages, boolean indexOn) throws IOException {
         try (RandomAccessFile raf = new RandomAccessFile(catalogFile, "rw");
              FileChannel channel = raf.getChannel()) {
+            //TODO: CHANGE THIS AND ALL OTHERS SO THAT IT ISN"T HARD CODED
             ByteBuffer buffer = ByteBuffer.allocate(2048);
             buffer.putInt(pageSize);
             buffer.flip();
@@ -196,6 +208,7 @@ public class StorageManager {
             buffer.clear();
 
             if (indexOn){
+                //Put BplusTreeNode root into catalog
                 for (Map.Entry<Integer, Integer> entry : treeNodes.entrySet()){
                     int tableId = entry.getKey();
                     int rootPointer = entry.getValue();
@@ -207,6 +220,18 @@ public class StorageManager {
                 }
             }
 
+            //Put Table number of pages into catalog
+            for (Map.Entry<Integer, Integer> entry: tableNumPages.entrySet()){
+                int tableId = entry.getKey();
+                int numPages = entry.getValue();
+                buffer.putInt(tableId);
+                buffer.putInt(numPages);
+                buffer.flip();
+                channel.write(buffer);
+                buffer.clear();
+            }
+
+            //Put Table name and it's schema into the catalog
             for (Map.Entry<Integer, TableSchema> entry : tableSchemasByNum.entrySet()) {
                 String tableName = entry.getValue().getTableName();
                 byte[] nameBytes = tableName.getBytes();
@@ -233,7 +258,7 @@ public class StorageManager {
      * @return updated order of page id
      * @throws IOException
      */
-    public static List<Integer> rewriteTableFileHeader(int tableId, int indexToEnter, int newPageId, boolean getTreeOrder) throws IOException{
+    /*public static List<Integer> rewriteTableFileHeader(int tableId, int indexToEnter, int newPageId, boolean getTreeOrder) throws IOException{
         String filePath;
         if (getTreeOrder){
             filePath = dbLocation + "/indexes/tree" + tableId + ".bpt";
@@ -327,7 +352,7 @@ public class StorageManager {
             return newPageOrder;
         }
 
-    }
+    }*/
     
     /**
      * Gets a record given an table id and a primaryKeyValue

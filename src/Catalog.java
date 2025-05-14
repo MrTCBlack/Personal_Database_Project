@@ -17,6 +17,7 @@ public class Catalog {
     private static Map<Integer, TableSchema> tableSchemasByNum; // Stores table schemas by table number
     private static Map<String, TableSchema> tableSchemasByName; // Stores table schemas by name
     private static Map<Integer, Integer> treeNodes; //stores root node pointer for each table
+    private static Map<Integer, Integer> tableNumPages; // stores the number of pages in each table
     private int lastUsedId;
     private static boolean indexOn;
 
@@ -32,6 +33,7 @@ public class Catalog {
         this.tableSchemasByName = new HashMap<>();
         this.treeNodes = new HashMap<>();
         this.indexOn = indexOn;
+        tableNumPages = new HashMap<>();
     }
 
     /**
@@ -48,7 +50,7 @@ public class Catalog {
 
         //Calls StorageManagers loadCatalogFromFile to
         //  load in the table schemas and get the original pageSize
-        this.pageSize = StorageManager.loadCatalogFromFile(tableSchemasByNum, tableSchemasByName, treeNodes, file);
+        this.pageSize = StorageManager.loadCatalogFromFile(tableSchemasByNum, tableSchemasByName, treeNodes, tableNumPages, file);
         if(tableSchemasByNum.size() > 0) {
             setLastUsed(Collections.max(tableSchemasByNum.keySet()));
         } else {
@@ -60,7 +62,7 @@ public class Catalog {
      * Saves the catalog information to a binary file, storing table schemas.
      */
     public static void saveCatalog() throws IOException {
-        StorageManager.saveCatalog(catalogFile, pageSize, tableSchemasByNum, tableSchemasByName, treeNodes, indexOn);
+        StorageManager.saveCatalog(catalogFile, pageSize, tableSchemasByNum, tableSchemasByName, treeNodes, tableNumPages, indexOn);
     }
 
     /**
@@ -304,5 +306,23 @@ public class Catalog {
      */
     public void removeRoot(int treeId){
         treeNodes.remove(treeId);
+    }
+
+    /**
+     * return a the number of pages in a table
+     * @param tableID the id of the table to get the number of pages of
+     * @return the number of pages
+     */
+    public Integer getTablesNumPages(Integer tableID){
+        return tableNumPages.get(tableID);
+    }
+
+    /**
+     * Set the number of pages for a table
+     * @param tableID the id of the table that's pages are being set
+     * @param numPages the number of pages in the table
+     */
+    public void setTablesNumPages(Integer tableID, Integer numPages){
+        tableNumPages.put(tableID, numPages);
     }
 }
