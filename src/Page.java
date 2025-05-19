@@ -298,7 +298,7 @@ public class Page {
      * @return The size of the page in bytes.
      */
     public int computeSize() {
-        int size = 4; // 4 bytes for numRecords metadata
+        int size = 8; // 4 bytes for numRecords and 4 bytes for pageID
         for (Record record : records) {
             size += record.computeSize();
         }
@@ -383,6 +383,14 @@ public class Page {
      */
     public int getPageId(){
         return pageId;
+    }
+
+    /**
+     * sets the id of this page
+     * @param pageID the id of this page
+     */
+    public void setPageId(Integer pageID){
+        this.pageId = pageID;
     }
 
 }

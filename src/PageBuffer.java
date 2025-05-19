@@ -41,7 +41,7 @@ public class PageBuffer {
      *                      Used when table file header is being rewritten and all pages are being shifted
      * @throws IOException
      */
-    public void pushPage(int tableId, int pageId, Object page, List<Integer> pageOrder, int shiftAmount) throws IOException{
+    public void pushPage(int tableId, int pageId, Object page) throws IOException{
         int key;
         if (page instanceof Page){
             key = getPageKey(tableId, pageId, false);
@@ -64,7 +64,7 @@ public class PageBuffer {
             }
             File tableFile = new File(filePath);
             if (tableFile.exists()){
-                if (tableId != excessTableId ||
+                /*if (tableId != excessTableId ||
                     (page instanceof Page && !(excess instanceof Page))||
                      (!(page instanceof Page) && excess instanceof Page)){
                     if (excess instanceof Page){
@@ -72,11 +72,11 @@ public class PageBuffer {
                     } else {
                         pageOrder = getPageOrder(excessTableId, false);
                     }
-                }
+                }*/
                 if (excess instanceof Page){
-                    writePageToDisk(excessTableId, excessPageId, (Page)excess, pageOrder, shiftAmount);
+                    writePageToDisk(excessTableId, excessPageId, (Page)excess);
                 } else {
-                    writeBplusNodeToDisk(excessTableId, excessPageId, (BplusTreeNode)excess, pageOrder, shiftAmount);
+                    writeBplusNodeToDisk(excessTableId, excessPageId, (BplusTreeNode)excess, pageOrder);
                 }
             }  
         }
@@ -97,7 +97,7 @@ public class PageBuffer {
      *                      Used when table file header is being rewritten and all pages are being shifted
      * @throws IOException
      */
-    public void shiftPage(int tableId, int pageId, List<Integer> pageOrder, int shiftAmount, AttributeSchema primaryKey, boolean getTreeNode) throws IOException{
+    /*public void shiftPage(int tableId, int pageId, List<Integer> pageOrder, int shiftAmount, AttributeSchema primaryKey, boolean getTreeNode) throws IOException{
         Object pageToShift = getPage(tableId, pageId, pageOrder, shiftAmount, primaryKey, getTreeNode);
         Object removed = cache.remove(getPageKey(tableId, pageId, getTreeNode));
         assert(removed != null);
@@ -106,7 +106,7 @@ public class PageBuffer {
         } else {
             writeBplusNodeToDisk(tableId, pageId, (BplusTreeNode)pageToShift, pageOrder, shiftAmount);
         }
-    }
+    }*/
 
     /**
      * Retrieves a page from the buffer. If not found, it is loaded from disk.
@@ -118,18 +118,18 @@ public class PageBuffer {
      * @return the page retrieved from the buffer
      * @throws IOException
      */
-    public Object getPage(int tableId, int pageId, List<Integer> pageOrder, int shiftAmount, AttributeSchema primaryKey, boolean getTreeNode) throws IOException{
+    public Object getPage(int tableId, int pageId, AttributeSchema primaryKey, boolean getTreeNode) throws IOException{
         int key = getPageKey(tableId, pageId, getTreeNode);
         Object page = this.cache.get(key);
 
         if (page == null) {
             //System.out.println("Happening when pageId is:"+pageId);
             if (!getTreeNode){
-                page = readPageFromDisk(tableId, pageId, pageOrder);
+                page = readPageFromDisk(tableId, pageId);
             }else {
                 page = readBPlusNodeFromDisk(tableId, pageId, pageOrder, primaryKey);
             }
-            pushPage(tableId, pageId, page, pageOrder, shiftAmount);
+            pushPage(tableId, pageId, page);
         }
         return page;
     }
@@ -141,7 +141,7 @@ public class PageBuffer {
      * @return a list of page ids
      * @throws IOException
      */
-    private List<Integer> getPageOrder(int tableId, boolean isPage) throws IOException{
+    /*private List<Integer> getPageOrder(int tableId, boolean isPage) throws IOException{
         String filePath;
         if(isPage){
             filePath = dbLocation + "tables/table" + tableId + ".tbl";
@@ -188,7 +188,7 @@ public class PageBuffer {
             }
             return pageOrder;
         }
-    }
+    }*/
 
     /**
      * Evicts the least recently used (LRU) page from memory and writes it to disk.
@@ -276,25 +276,68 @@ public class PageBuffer {
      * @param shiftAmount the shift that should be accounted for when writing the page
      *                      Used when table file header is being rewritten and all pages are being shifted
      */
-    private void writePageToDisk(int tableId, int pageId, Page page, List<Integer> pageOrder, int shiftAmount) {
+    private void writePageToDisk(int tableId, int pageId, Page page) {
         String filePath = dbLocation + "/tables/table" + tableId + ".tbl";
         try (RandomAccessFile raf = new RandomAccessFile(filePath, "rw");
             FileChannel channel = raf.getChannel()) {
             ByteBuffer buffer = ByteBuffer.allocate(pageSize);
 
-            int numPages = pageOrder.size();
+            //int numPages = pageOrder.size();
             //skip over the header
-            raf.skipBytes(4 + 4*numPages);
+            //raf.skipBytes(4 + 4*numPages);
             //loop through the pageIds until find the pageId passed in
             //For each pageId that isn't the one given, skip over PageSize bytes
-            for (int pageNum : pageOrder){
+            //********************************************************************************* */
+            //TODO: How to find the page; Get rid of pageOrder because adding new page to the end file
+            //      Loop through the pages reading in the pageID;
+            //          If it matches with the given, then rewrite there
+            //      Either change so Page only accounts for numRecords and records
+            //          or move back 4 bytes before writing whole page plus metadata
+
+            /*LOGIC: Read in the pageID from the current page
+             *          If the read in pageID matches the given pageId,
+             *              then move back 4 bytes and write the page with metadata
+             *          Else, move back 4 bytes and move the page pointer forward a page size
+             *          If a read is done and the position of the buffer is still 0,
+             *              then have reached the end of the file and should write there
+            */
+            ByteBuffer pageIDBuffer = ByteBuffer.allocate(4);
+            int pageIDRead = -1;
+            while (pageIDRead != pageId){
+                channel.read(pageIDBuffer);
+
+                if (pageIDBuffer.position() == 0){
+                    break;
+                }
+
+                pageIDBuffer.flip();
+                pageIDRead = pageIDBuffer.getInt();
+
+                //move file pointer back 4 bytes
+                channel.position(channel.position() - 4);
+
+                /*If the pageID read in is not the same as the given pageID,
+                 *      then skip over this page so that the next page can be looked at
+                 * Otherwise, the while loop will end and the page will be written
+                */
+                if (pageIDRead != pageId){
+                    raf.skipBytes(pageSize);
+                    pageIDBuffer.clear(); //clear buffer so new pageID can be read in
+                }
+            }
+           
+
+
+
+            /*for (int pageNum : pageOrder){
                 if (pageNum == pageId){
                     break;
                 }
                 int bytesSkipped = raf.skipBytes(pageSize);
                 assert(bytesSkipped == pageSize);
-            }
+            }*/
 
+            buffer.putInt(pageId); //put the pageId into the buffer
 
             List<Record> records = page.getRecords();
             int numRecords = records.size();
@@ -306,12 +349,12 @@ public class PageBuffer {
 
             buffer.position(0); //move the position of the buffer to 0
                                             //this is so writting begins from the
-                                            //  beginning of the buffer
+                                            //  beginning of the buffer and pageSize amount of bytes are written
             /*if (shiftingPage){
                 raf.skipBytes(4); //skip 4 bytes because int is being added to page order
             }*/
             //raf.skipBytes(shiftAmount);
-            channel.position(raf.getFilePointer()+shiftAmount);
+            channel.position(raf.getFilePointer());
             //raf.seek(raf.getFilePointer())
             //raf.
 
@@ -342,24 +385,59 @@ public class PageBuffer {
      * @param pageOrder the page order of the table with the given id
      * @return The Page object retrieved from disk, or null if not found.
      */
-    private Page readPageFromDisk(int tableId, int pageId, List<Integer> pageOrder) {
+    private Page readPageFromDisk(int tableId, int pageId) {
         String filePath = dbLocation + "/tables/table" + tableId + ".tbl";
         try (RandomAccessFile raf = new RandomAccessFile(filePath, "r");
                 FileChannel channel = raf.getChannel()) {
             ByteBuffer buffer = ByteBuffer.allocate(pageSize);
             
-            int numPages = pageOrder.size();
+            //int numPages = pageOrder.size();
             //skip over the header
-            raf.skipBytes(4 + 4*numPages);
+            //raf.skipBytes(4 + 4*numPages);
             //loop through the pageIds until find the pageId passed in
             //For each pageId that isn't the one given, skip over PageSize bytes
-            for (int pageNum : pageOrder){
+
+            /*LOGIC: Read in the pageID from the current page
+             *          If the read in pageID matches the given pageId,
+             *              then move back 4 bytes and write the page with metadata
+             *          Else, move back 4 bytes and move the page pointer forward a page size
+             *          If a read is done and the position of the buffer is still 0,
+             *              then have reached the end of the file and should write there
+            */
+            ByteBuffer pageIDBuffer = ByteBuffer.allocate(4);
+            int pageIDRead = -1;
+            while (pageIDRead != pageId){
+                channel.read(pageIDBuffer);
+
+                /*if (pageIDBuffer.position() == 0){
+                    break;
+                }*/
+
+                pageIDBuffer.flip();
+                pageIDRead = pageIDBuffer.getInt();
+
+                //move file pointer back 4 bytes
+                channel.position(channel.position() - 4);
+
+                /*If the pageID read in is not the same as the given pageID,
+                 *      then skip over this page so that the next page can be looked at
+                 * Otherwise, the while loop will end and the page will be written
+                */
+                if (pageIDRead != pageId){
+                    raf.skipBytes(pageSize);
+                    pageIDBuffer.clear(); //clear buffer so new pageID can be read in
+                }
+            }
+            
+
+
+            /*for (int pageNum : pageOrder){
                 if (pageNum == pageId){
                     break;
                 }
                 int bytesSkipped = raf.skipBytes(pageSize);
                 assert(bytesSkipped == pageSize);
-            }
+            }*/
 
             channel.position(raf.getFilePointer()); //move the channel to the filepointer
                                                     //this is where reading will be done from

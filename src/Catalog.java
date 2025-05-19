@@ -3,6 +3,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  * Manages the database catalog, which keeps track of all table schemas.
@@ -17,7 +18,14 @@ public class Catalog {
     private static Map<Integer, TableSchema> tableSchemasByNum; // Stores table schemas by table number
     private static Map<String, TableSchema> tableSchemasByName; // Stores table schemas by name
     private static Map<Integer, Integer> treeNodes; //stores root node pointer for each table
-    private static Map<Integer, Integer> tableNumPages; // stores the number of pages in each table
+    //private static Map<Integer, Integer> tableNumPages; // stores the number of pages in each table
+    /*Don't need a numPages for tables because can get that from the pageOrder list;
+     *      Need a page order for tables in order to know the order of the records
+     * Don't need a page order for BplusTrees because they have pointers;
+     *      Need a numPages for BplusTrees so that the number to read is known
+     */
+    private static Map<Integer, Integer> treeNumPages; // stores the number of pages for each table's BplusTree
+    private static Map<Integer, List<Integer>> tablePageOrder; //stores the page order for each table
     private int lastUsedId;
     private static boolean indexOn;
 
@@ -33,7 +41,9 @@ public class Catalog {
         this.tableSchemasByName = new HashMap<>();
         this.treeNodes = new HashMap<>();
         this.indexOn = indexOn;
-        tableNumPages = new HashMap<>();
+        //tableNumPages = new HashMap<>();
+        treeNumPages = new HashMap<>();
+        tablePageOrder = new HashMap<>();
     }
 
     /**
@@ -50,7 +60,7 @@ public class Catalog {
 
         //Calls StorageManagers loadCatalogFromFile to
         //  load in the table schemas and get the original pageSize
-        this.pageSize = StorageManager.loadCatalogFromFile(tableSchemasByNum, tableSchemasByName, treeNodes, tableNumPages, file);
+        this.pageSize = StorageManager.loadCatalogFromFile(tableSchemasByNum, tableSchemasByName, treeNodes, treeNumPages, tablePageOrder, file);
         if(tableSchemasByNum.size() > 0) {
             setLastUsed(Collections.max(tableSchemasByNum.keySet()));
         } else {
@@ -62,7 +72,7 @@ public class Catalog {
      * Saves the catalog information to a binary file, storing table schemas.
      */
     public static void saveCatalog() throws IOException {
-        StorageManager.saveCatalog(catalogFile, pageSize, tableSchemasByNum, tableSchemasByName, treeNodes, tableNumPages, indexOn);
+        StorageManager.saveCatalog(catalogFile, pageSize, tableSchemasByNum, tableSchemasByName, treeNodes, treeNumPages, tablePageOrder, indexOn);
     }
 
     /**
@@ -309,20 +319,47 @@ public class Catalog {
     }
 
     /**
-     * return a the number of pages in a table
-     * @param tableID the id of the table to get the number of pages of
-     * @return the number of pages
+     * return the page order of a table
+     * @param tableID the id of the table to get the page order of
+     * @return the page order
      */
-    public Integer getTablesNumPages(Integer tableID){
-        return tableNumPages.get(tableID);
+    public static List<Integer> getTablePageOrder(Integer tableID){
+        return tablePageOrder.get(tableID);
     }
 
     /**
-     * Set the number of pages for a table
+     * Adds the new pageID to a table's pageOrder at a given index
      * @param tableID the id of the table that's pages are being set
-     * @param numPages the number of pages in the table
+     * @param index the index in the page order to insert the new pageID into
+     * @param pageID the id of the new page
      */
-    public void setTablesNumPages(Integer tableID, Integer numPages){
-        tableNumPages.put(tableID, numPages);
+    public static void addPageAtIndex(Integer tableID, Integer index, Integer pageID){
+        if (tablePageOrder.get(tableID) == null){
+            tablePageOrder.put(tableID, new ArrayList<>());
+        }
+        List<Integer> pageOrder = tablePageOrder.get(tableID);
+        if (pageOrder.size() == index){
+            pageOrder.add(pageID);
+        }else{
+            pageOrder.add(index, pageID);
+        }
+    }
+
+    /**
+     * return a the number of pages for a BplusTree
+     * @param treeID the id of the BplusTree to get the number of pages of
+     * @return the number of pages
+     */
+    public static Integer getTreeNumPages(Integer treeID){
+        return treeNumPages.get(treeID);
+    }
+
+    /**
+     * add 1 to the number of pages for a BplusTree
+     * @param treeID the id of the BplusTree that's pages are being set
+     */
+    public static void addTreesNumPages(Integer treeID){
+        int newNumPages = treeNumPages.get(treeID) + 1;
+        treeNumPages.put(treeID, newNumPages);
     }
 }

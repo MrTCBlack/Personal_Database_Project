@@ -79,9 +79,11 @@ public class StorageManager {
      * @throws IOException
      */
     public static int loadCatalogFromFile(Map<Integer, TableSchema> tableSchemasByNum, Map<String, TableSchema> tableSchemasByName, 
-                                            Map<Integer, Integer> treeNodes, Map<Integer, Integer> tableNumPages, File catalogFile) throws IOException{
+                                            Map<Integer, Integer> treeNodes, Map<Integer, Integer> treeNumPages, 
+                                            Map <Integer, List<Integer>> tablePageOrder, File catalogFile) throws IOException{
         try (RandomAccessFile raf = new RandomAccessFile(catalogFile, "r");
             FileChannel channel = raf.getChannel()) {
+            //TODO: Fix this size problem
             ByteBuffer buffer = ByteBuffer.allocate((int) catalogFile.length());
             channel.read(buffer);   //read the catalog into a buffer
             buffer.flip();  //flip so that buffer position is 0
@@ -107,10 +109,28 @@ public class StorageManager {
             }
 
             //Read in number of pages for tables from catalog
-            for (int i = 0; i < numTables; i++){
+            /*for (int i = 0; i < numTables; i++){
                 int tableId = buffer.getInt();
                 int numPages = buffer.getInt();
                 tableNumPages.put(tableId, numPages);
+            }*/
+
+            if (Catalog.isIndexOn()){
+                //Read in number of pages for BplusTrees from catalog
+                for (int i = 0; i < numTables; i++){
+                    int tableId = buffer.getInt();
+                    int numPages = buffer.getInt();
+                    treeNumPages.put(tableId, numPages);
+                }
+            }
+
+            //Read in number of pages for tables from catalog
+            for (int i = 0; i < numTables; i++){
+                int tableId = buffer.getInt();
+                int numPages = buffer.getInt();
+                for (int indx = 0; indx < numPages; indx++){
+                    Catalog.addPageAtIndex(tableId, indx, buffer.getInt());
+                }
             }
         
             //Read in table name and table schema from catalog
@@ -185,7 +205,8 @@ public class StorageManager {
     //TODO: COME BACK AND REWORK SO THAT IT TAKES UP LESS SPACE
     public static void saveCatalog(String catalogFile, int pageSize, 
                                     Map<Integer, TableSchema> tableSchemasByNum, Map<String, TableSchema> tableSchemasByName,
-                                    Map<Integer, Integer> treeNodes, Map<Integer, Integer> tableNumPages, boolean indexOn) throws IOException {
+                                    Map<Integer, Integer> treeNodes, Map<Integer, Integer> treeNumPages, 
+                                    Map<Integer, List<Integer>> tablePageOrder, boolean indexOn) throws IOException {
         try (RandomAccessFile raf = new RandomAccessFile(catalogFile, "rw");
              FileChannel channel = raf.getChannel()) {
             //TODO: CHANGE THIS AND ALL OTHERS SO THAT IT ISN"T HARD CODED
@@ -220,12 +241,28 @@ public class StorageManager {
                 }
             }
 
-            //Put Table number of pages into catalog
-            for (Map.Entry<Integer, Integer> entry: tableNumPages.entrySet()){
-                int tableId = entry.getKey();
-                int numPages = entry.getValue();
-                buffer.putInt(tableId);
+            if (indexOn){
+                //Put BplusTree number of pages into catalog
+                for (Map.Entry<Integer, Integer> entry: treeNumPages.entrySet()){
+                    int treeId = entry.getKey();
+                    int numPages = entry.getValue();
+                    buffer.putInt(treeId);
+                    buffer.putInt(numPages);
+                    buffer.flip();
+                    channel.write(buffer);
+                    buffer.clear();
+                }
+            }
+
+            //Put table page order into catalog
+            for (Map.Entry<Integer, List<Integer>> entry: tablePageOrder.entrySet()){
+                int treeId = entry.getKey();
+                int numPages = entry.getValue().size();
+                buffer.putInt(treeId);
                 buffer.putInt(numPages);
+                for (Integer pageId: entry.getValue()){
+                    buffer.putInt(pageId);
+                }
                 buffer.flip();
                 channel.write(buffer);
                 buffer.clear();
@@ -556,7 +593,7 @@ public class StorageManager {
      * @return a list of page ids
      * @throws IOException
      */
-    public static List<Integer> getPageOrder(int tableId, boolean getTreeOrder) throws IOException{
+    /*public static List<Integer> getPageOrder(int tableId, boolean getTreeOrder) throws IOException{
         String filePath = "";
         if(getTreeOrder){
             filePath = dbLocation + "/indexes/tree" + tableId + ".bpt";
@@ -601,7 +638,7 @@ public class StorageManager {
             }
             return pageOrder;
         }
-    }
+    }*/
 
     /**
      * Gets a page with the given pageId from the pageBuffer
@@ -979,7 +1016,8 @@ public class StorageManager {
      * @return updated order of page id
      * @throws IOException
      */
-    public List<Integer> insertRecord(Record record, int tableId, List<Integer> oldPageOrder, boolean addAtEnd, boolean indexOn) throws Exception{
+    //public List<Integer> insertRecord(Record record, int tableId, List<Integer> oldPageOrder, boolean addAtEnd, boolean indexOn) throws Exception{
+    public List<Integer> insertRecord(Record record, int tableId, boolean addAtEnd, boolean indexOn) throws Exception{
         //file should always exist and if empty, just has pagesize of 0
         String filePath;
         if (indexOn){
@@ -993,15 +1031,26 @@ public class StorageManager {
             System.out.println("table"+tableId+" does not exist.");
             return null;
         }
-        try (RandomAccessFile raf = new RandomAccessFile(filePath, "r"); FileChannel channel = raf.getChannel()) {
+        //try (RandomAccessFile raf = new RandomAccessFile(filePath, "r"); FileChannel channel = raf.getChannel()) {
 
             int numPages;
-            List<Integer> treePageOrder = null;
+            //List<Integer> pageOrder;
+            //List<Integer> treePageOrder = null;
             if (indexOn){
-                treePageOrder = getPageOrder(tableId, true);
-                numPages = treePageOrder.size();
+                //treePageOrder = getPageOrder(tableId, true);
+                //numPages = treePageOrder.size();
+                numPages = Catalog.getTreeNumPages(tableId); //get the number of tree pages
+                //pageOrder = null;
             } else {
-                numPages = oldPageOrder.size(); //get the number of pages
+                //numPages = oldPageOrder.size(); //get the number of pages
+                //numPages = Catalog.getTablesNumPages(tableId); //get the number of pages
+                List<Integer> pageOrder = Catalog.getTablePageOrder(tableId); //get the number of table pages
+                if (pageOrder != null){
+                    numPages = pageOrder.size();
+                } else{
+                    numPages = 0;
+                }
+                
             }
 
             /*If the number of pages is 0, a new Page will be created,
@@ -1011,12 +1060,13 @@ public class StorageManager {
             */
             if (numPages == 0){
                 Page newPage = new Page(pageSize, 1);
+                Catalog.addPageAtIndex(tableId, 0, 1);
                 List<Record> newRecordsList = new ArrayList<>();
                 newRecordsList.add(record);
                 newPage.setRecords(newRecordsList);
-                List<Integer> newPageOrder = rewriteTableFileHeader(tableId, 0, 1, false);
-                pageBuffer.pushPage(tableId, 1, newPage, newPageOrder, 0);
-                raf.close();
+                //List<Integer> newPageOrder = rewriteTableFileHeader(tableId, 0, 1, false);
+                pageBuffer.pushPage(tableId, newPage.getPageId(), newPage);
+                //raf.close();
                 return newPageOrder;
             }
 
@@ -1027,11 +1077,12 @@ public class StorageManager {
             int pageOrderIndex = 0; //the current index in the pageOrder array
             boolean wasRecordAdded = false; //used to check if the record was added to a page
 
+            List<Integer> pageOrder = Catalog.getTablePageOrder(tableId);
             //Skips looping through all the pages and goes right to adding to the end
             if (!addAtEnd){
                 //Loops through the pageOrder, getting pageIds and seeing if the record can be inserted
-                for (int pageId : oldPageOrder){
-                    Page page = (Page)pageBuffer.getPage(tableId, pageId, oldPageOrder, 0, null, false);
+                for (int pageId : pageOrder){
+                    Page page = (Page)pageBuffer.getPage(tableId, pageId, null, false);
                     wasRecordAdded = page.addRecord(record, catalog.getTableSchemaByNum(tableId));
 
                     /*
@@ -1045,7 +1096,7 @@ public class StorageManager {
                      */
                     if (wasRecordAdded){
                         if(page.pageIsGreaterThanPageSize()){
-                            Page newPage = new Page(pageSize, Collections.max(oldPageOrder)+1);
+                            Page newPage = new Page(pageSize, Collections.max(pageOrder)+1);
                             List<Record> oldPageOrignalList = page.getRecords();
                             int numberOfRecords = oldPageOrignalList.size();
                             int numberOfRecordsForOldPage = (int)(Math.ceil((double)numberOfRecords)/2.0);
@@ -1061,23 +1112,24 @@ public class StorageManager {
                             page.setRecords(oldPageNewRecords);
                             newPage.setRecords(newPageRecords);
 
-                            List<Integer> newPageOrder = rewriteTableFileHeader(tableId, pageOrderIndex+1, Collections.max(oldPageOrder)+1, false);
-                            pageBuffer.pushPage(tableId, pageId, page, newPageOrder, 0);
-                            pageBuffer.pushPage(tableId, Collections.max(oldPageOrder)+1, newPage, newPageOrder, 0);
+                            //List<Integer> newPageOrder = rewriteTableFileHeader(tableId, pageOrderIndex+1, Collections.max(oldPageOrder)+1, false);
+                            Catalog.addPageAtIndex(tableId, pageOrderIndex+1, newPage.getPageId()); //add new pageID following the index of the current pageID
+                            pageBuffer.pushPage(tableId, pageId, page);
+                            pageBuffer.pushPage(tableId, newPage.getPageId(), newPage);
 
-                            raf.close();
+                            //raf.close();
                             return newPageOrder;
                         }
-                        pageBuffer.pushPage(tableId, pageId,page, oldPageOrder, 0);
+                        pageBuffer.pushPage(tableId, pageId,page);
 
-                        raf.close();
+                        //raf.close();
                         return oldPageOrder;
                     }
-                    pageBuffer.pushPage(tableId, pageId,page, oldPageOrder, 0);
+                    pageBuffer.pushPage(tableId, pageId,page);
                     pageOrderIndex += 1;
                 }
             } else {
-                pageOrderIndex = oldPageOrder.size();
+                pageOrderIndex = pageOrder.size();
             }
 
             /**
@@ -1088,12 +1140,12 @@ public class StorageManager {
              *  as above
              */
             if (!wasRecordAdded){
-                Page page = (Page)pageBuffer.getPage(tableId, oldPageOrder.get(oldPageOrder.size()-1), oldPageOrder, 0, null, false);
+                Page page = (Page)pageBuffer.getPage(tableId, pageOrder.get(pageOrder.size()-1), null, false);
                 List<Record> oldPageOrignalList = page.getRecords();
                 oldPageOrignalList.add(record);
                 page.setRecords(oldPageOrignalList);
                 if(page.pageIsGreaterThanPageSize()){
-                    Page newPage = new Page(pageSize, Collections.max(oldPageOrder)+1);
+                    Page newPage = new Page(pageSize, Collections.max(pageOrder)+1);
                     oldPageOrignalList = page.getRecords();
                     int numberOfRecords = oldPageOrignalList.size();
                     int numberOfRecordsForOldPage = (int)(Math.ceil((double)numberOfRecords)/2.0);
@@ -1109,22 +1161,23 @@ public class StorageManager {
                     page.setRecords(oldPageNewRecords);
                     newPage.setRecords(newPageRecords);
 
-                    List<Integer> newPageOrder = rewriteTableFileHeader(tableId, pageOrderIndex, Collections.max(oldPageOrder)+1, false);
+                    //List<Integer> newPageOrder = rewriteTableFileHeader(tableId, pageOrderIndex, Collections.max(oldPageOrder)+1, false);
+                    Catalog.addPageAtIndex(tableId, pageOrderIndex, newPage.getPageId()); //add new pageID following the index of the current pageID
 
-                    pageBuffer.pushPage(tableId, oldPageOrder.get(oldPageOrder.size()-1), page, newPageOrder, 0);
-                    pageBuffer.pushPage(tableId, Collections.max(oldPageOrder)+1, newPage, newPageOrder, 0);
+                    pageBuffer.pushPage(tableId, page.getPageId(), page);
+                    pageBuffer.pushPage(tableId, newPage.getPageId(), newPage);
 
-                    raf.close();
+                    //raf.close();
                     return newPageOrder;
                 }
-                pageBuffer.pushPage(tableId, oldPageOrder.get(oldPageOrder.size()-1),page, oldPageOrder, 0);
+                pageBuffer.pushPage(tableId, page.getPageId(), page);
 
-                raf.close();
+                //raf.close();
                 return oldPageOrder;
             }
-            raf.close();
+            //raf.close();
             return null;
-        }
+        //}
     }
 
     /**
