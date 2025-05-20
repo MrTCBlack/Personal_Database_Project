@@ -102,6 +102,7 @@ public class Catalog {
         }
 
         // This will automatically update the catalog as soon as a new table schema is added
+        //TODO: Move this to the end?
         saveCatalog();
 
         String DBPath = catalogFile.substring(0, catalogFile.length() - 7);
@@ -112,6 +113,7 @@ public class Catalog {
             System.err.println("Error with creating a new Table File");
         }
 
+        //TODO: Rework this so that it combined with above
         if(givenIndexOn){
             String treePath = DBPath + "/indexes/tree" + lastUsedId + ".bpt";
             boolean treeFileCreated = StorageManager.createNewBplusFile(lastUsedId, treePath);
@@ -120,9 +122,10 @@ public class Catalog {
             }
             //Rewrite the header and push the new page
             //This will make a table's Bplus file always start with one page before inserts begin
-            StorageManager.rewriteTableFileHeader(lastUsedId, 0, 1, true);
-            List<Integer> pageOrder = StorageManager.getPageOrder(lastUsedId, true);
-            StorageManager.pushBplusNode(lastUsedId, 1, root, pageOrder);
+            //StorageManager.rewriteTableFileHeader(lastUsedId, 0, 1, true);
+            addTreesNumPages(lastUsedId);
+            //List<Integer> pageOrder = StorageManager.getPageOrder(lastUsedId, true);
+            StorageManager.pushBplusNode(lastUsedId, 1, root);
         }
     }
 
@@ -359,7 +362,11 @@ public class Catalog {
      * @param treeID the id of the BplusTree that's pages are being set
      */
     public static void addTreesNumPages(Integer treeID){
-        int newNumPages = treeNumPages.get(treeID) + 1;
+        int newNumPages = 0;
+        if (treeNumPages.get(treeID) != null){
+            newNumPages += treeNumPages.get(treeID);
+        }
+        newNumPages += 1;
         treeNumPages.put(treeID, newNumPages);
     }
 }

@@ -655,7 +655,7 @@ public class StorageManager {
     /**
      * Function for getting BplusNodes from buffer
      */
-    public static BplusTreeNode getBplusNode(int tableId, int pageId, List<Integer> pageOrder) throws IOException{
+    public static BplusTreeNode getBplusNode(int tableId, int pageId) throws IOException{
         AttributeSchema primaryKey = null;
         for (AttributeSchema as : catalog.getTableSchemaByNum(tableId).getAttributes()){
             if (as.isPrimaryKey()){
@@ -663,14 +663,14 @@ public class StorageManager {
                 break;
             }
         }
-        return (BplusTreeNode)pageBuffer.getPage(tableId, pageId, pageOrder, 0, primaryKey, true);
+        return (BplusTreeNode)pageBuffer.getPage(tableId, pageId, primaryKey, true);
     }
 
     /**
      * Push BplusNode to buffer
      */
-    public static void pushBplusNode(int tableId, int pageId, BplusTreeNode node, List<Integer> pageOrder) throws IOException{
-        pageBuffer.pushPage(tableId, pageId, node, pageOrder, 0);
+    public static void pushBplusNode(int tableId, int pageId, BplusTreeNode node) throws IOException{
+        pageBuffer.pushPage(tableId, pageId, node);
     }
 
     /**
@@ -703,6 +703,7 @@ public class StorageManager {
      * @return fale if error, true otherwise
      * @throws IOException
      */
+    //TODO: Combine createNewTableFile and createNewBplusFile together
     public static boolean createNewTableFile(int tableId, String tablePath) throws IOException{
         File tableFile = new File(tablePath);
         if(tableFile.exists()){
@@ -923,7 +924,7 @@ public class StorageManager {
     /**
      * Function for inserting using the BplusTree 
      */
-    private List<Integer> insertBplusTree(Record record, int tableId, List<Integer> treePageOrder, List<Integer> oldPageOrder) throws Exception{
+    private List<Integer> insertBplusTree(Record record, int tableId) throws Exception{
         TableSchema tableSchema = catalog.getTableSchemaByNum(tableId);
         Object primaryKeyValue = record.getPrimaryKeyValue(tableSchema);
         AttributeSchema primaryKeyAttributeSchema = null;
@@ -935,34 +936,37 @@ public class StorageManager {
         }
 
         //Insert into Bplus tree to get the page and index in the table to insert
-        BplusTreeNode root = getBplusNode(tableId, catalog.getRoot(tableId), treePageOrder);
+        BplusTreeNode root = getBplusNode(tableId, catalog.getRoot(tableId));
         int[] pagePointer = root.addNewValue(primaryKeyValue);
-        treePageOrder = getPageOrder(tableId, true);
-        root = getBplusNode(tableId, catalog.getRoot(tableId), treePageOrder);
+        //treePageOrder = getPageOrder(tableId, true);
+        root = getBplusNode(tableId, catalog.getRoot(tableId));
         if (pagePointer == null){
             throw new Exception("Duplicate Value");
         }
         int originalPageID = pagePointer[0];
         int pageIndex = pagePointer[1];
 
-        if (oldPageOrder.size() == 0){
+        if (Catalog.getTablePageOrder(tableId) == null){
             Page newPage = new Page(pageSize, 1);
             List<Record> newRecordsList = new ArrayList<>();
             newRecordsList.add(record);
             newPage.setRecords(newRecordsList);
-            List<Integer> newPageOrder = rewriteTableFileHeader(tableId, 0, 1, false);
-            pageBuffer.pushPage(tableId, 1, newPage, newPageOrder, 0);
+            //List<Integer> newPageOrder = rewriteTableFileHeader(tableId, 0, 1, false);
+            Catalog.addPageAtIndex(tableId, 0, newPage.getPageId());
+            pageBuffer.pushPage(tableId, 1, newPage);
 
             return newPageOrder;
         }
 
         //insert into page at index
-        Page page = (Page)pageBuffer.getPage(tableId, originalPageID, oldPageOrder, 0, primaryKeyAttributeSchema, false);
+        Page page = (Page)pageBuffer.getPage(tableId, originalPageID, primaryKeyAttributeSchema, false);
         page.insertAtIndex(record, pageIndex);
+
+        List<Integer> pageOrder = Catalog.getTablePageOrder(tableId);
 
         //do splitting of page if necessary
         if(page.pageIsGreaterThanPageSize()){
-            Page newPage = new Page(pageSize, Collections.max(oldPageOrder)+1);
+            Page newPage = new Page(pageSize, Collections.max(pageOrder)+1);
             List<Record> oldPageOrignalList = page.getRecords();
             int numberOfRecords = oldPageOrignalList.size();
             int numberOfRecordsForOldPage = (int)(Math.ceil((double)numberOfRecords)/2.0);
@@ -985,20 +989,21 @@ public class StorageManager {
             //update the BplusTree leaf nodes
             root.updatePagePointer(NewRecordsFirstPrimary, NewRecordsLastPrimary, newPage.getPageId());
 
-            int pageOrderIndex = oldPageOrder.indexOf(originalPageID);
+            int pageOrderIndex = pageOrder.indexOf(originalPageID);
             if(pageOrderIndex == -1) {
                 // Put it at the end
-                pageOrderIndex = oldPageOrder.size();
+                pageOrderIndex = pageOrder.size();
             } else {
                 pageOrderIndex += 1;
             }
 
-            List<Integer> newPageOrder = rewriteTableFileHeader(tableId, pageOrderIndex, Collections.max(oldPageOrder)+1, false);
-            pageBuffer.pushPage(tableId, originalPageID, page, newPageOrder, 0);
-            pageBuffer.pushPage(tableId, Collections.max(oldPageOrder)+1, newPage, newPageOrder, 0);
+            //List<Integer> newPageOrder = rewriteTableFileHeader(tableId, pageOrderIndex, Collections.max(oldPageOrder)+1, false);
+            Catalog.addPageAtIndex(tableId, pageOrderIndex, newPage.getPageId());
+            pageBuffer.pushPage(tableId, originalPageID, page);
+            pageBuffer.pushPage(tableId, newPage.getPageId(), newPage);
             return newPageOrder;
         }else{
-            pageBuffer.pushPage(tableId, originalPageID, page, oldPageOrder, 0);
+            pageBuffer.pushPage(tableId, originalPageID, page);
             return oldPageOrder;
         }
     }

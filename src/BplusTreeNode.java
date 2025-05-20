@@ -122,8 +122,8 @@ public class BplusTreeNode {
             int[] lastPointer = {-1, -2};
             pointers.add(lastPointer);
             //push this node to the buffer
-            List<Integer> pageOrder = StorageManager.getPageOrder(this.treeId, true);
-            StorageManager.pushBplusNode(this.treeId, this.pageNumber, this, pageOrder);
+            //List<Integer> pageOrder = StorageManager.getPageOrder(this.treeId, true);
+            StorageManager.pushBplusNode(this.treeId, this.pageNumber, this);
             return pointer;
         }
         int[] pointer = null;
@@ -167,7 +167,7 @@ public class BplusTreeNode {
             int currentIndex = value_index + 1;
             int tablePageNumber = this.pointers.get(value_index)[0];
             List<int[]> currentPointers = this.pointers;
-            List<Integer> pageOrder = StorageManager.getPageOrder(treeId, true);
+            //List<Integer> pageOrder = StorageManager.getPageOrder(treeId, true);
 
             // if last pointer in node, get next node
             boolean end = false;
@@ -175,7 +175,7 @@ public class BplusTreeNode {
                 if (currentPointers.get(currentIndex)[0] == -1){
                     end = true;
                 }else{
-                    currentNode = StorageManager.getBplusNode(treeId, currentPointers.get(currentIndex)[0], pageOrder);
+                    currentNode = StorageManager.getBplusNode(treeId, currentPointers.get(currentIndex)[0]);
                     currentIndex = 0;
                     currentPointers = currentNode.pointers;
                 }
@@ -194,12 +194,12 @@ public class BplusTreeNode {
                 // if last value pointer in node, get next node
                 if (currentIndex == currentPointers.size() - 2){
                     //push current node before getting new
-                    StorageManager.pushBplusNode(this.treeId,currentNode.pageNumber, currentNode, pageOrder);
+                    StorageManager.pushBplusNode(this.treeId,currentNode.pageNumber, currentNode);
                     //Same problem as up above
                     if (currentPointers.get(currentPointers.size() -1)[0] == -1){
                         break;
                     }
-                    currentNode = StorageManager.getBplusNode(treeId, currentPointers.get(currentPointers.size() -1)[0], pageOrder);
+                    currentNode = StorageManager.getBplusNode(treeId, currentPointers.get(currentPointers.size() -1)[0]);
                     currentIndex = 0;
                     currentPointers = currentNode.pointers;
                 } else {
@@ -217,8 +217,10 @@ public class BplusTreeNode {
                 List<int[]> oldPointers = new ArrayList<>(pointers);
                 
                 // split node in half
-                BplusTreeNode rightNode = new BplusTreeNode(n, Collections.max(pageOrder)+1, this.treeId ,parentPointer, primaryKeyType);
-                
+                //BplusTreeNode rightNode = new BplusTreeNode(n, Collections.max(pageOrder)+1, this.treeId ,parentPointer, primaryKeyType);
+                //LOGIC: Because always adding new page at the end, new pageID is the number of pages plus 1
+                BplusTreeNode rightNode = new BplusTreeNode(n, Catalog.getTreeNumPages(this.treeId)+1, this.treeId ,parentPointer, primaryKeyType);
+
                 // copy values and pointers from old node to split nodes
                 List<Object> leftNodeValuesSublist = oldValues.subList(0, split_index);
                 this.values = new ArrayList<>(leftNodeValuesSublist);
@@ -237,27 +239,30 @@ public class BplusTreeNode {
                 this.pointers.add(newLeftNodePointer);
 
                 //put the new page at the end
-                pageOrder = StorageManager.rewriteTableFileHeader(treeId, pageOrder.size(), Collections.max(pageOrder)+1, true);
+                //pageOrder = StorageManager.rewriteTableFileHeader(treeId, pageOrder.size(), Collections.max(pageOrder)+1, true);
+                Catalog.addTreesNumPages(this.treeId);
 
                 //push leftNode
-                StorageManager.pushBplusNode(treeId, pageNumber, this, pageOrder);
+                StorageManager.pushBplusNode(treeId, pageNumber, this);
                 //push rightNode
-                StorageManager.pushBplusNode(treeId, rightNode.pageNumber, rightNode, pageOrder);
+                StorageManager.pushBplusNode(treeId, rightNode.pageNumber, rightNode);
 
                 //handle what happens at root
                 if (this.parentPointer == -1){
-                    BplusTreeNode newParent = new BplusTreeNode(n,Collections.max(pageOrder)+1, this.treeId,-1, primaryKeyType);
-                    pageOrder = StorageManager.rewriteTableFileHeader(this.treeId, pageOrder.size(), Collections.max(pageOrder)+1, true);
-                    StorageManager.pushBplusNode(this.treeId, newParent.pageNumber, newParent, pageOrder);
+                    //BplusTreeNode newParent = new BplusTreeNode(n,Collections.max(pageOrder)+1, this.treeId,-1, primaryKeyType);
+                    BplusTreeNode newParent = new BplusTreeNode(n,Catalog.getTreeNumPages(this.treeId)+1, this.treeId,-1, primaryKeyType);
+                    //pageOrder = StorageManager.rewriteTableFileHeader(this.treeId, pageOrder.size(), Collections.max(pageOrder)+1, true);
+                    Catalog.addTreesNumPages(this.treeId);
+                    StorageManager.pushBplusNode(this.treeId, newParent.pageNumber, newParent);
 
                     this.setParent(newParent.pageNumber);
-                    StorageManager.pushBplusNode(this.treeId, this.pageNumber, this, pageOrder);
+                    StorageManager.pushBplusNode(this.treeId, this.pageNumber, this);
                     rightNode.setParent(newParent.pageNumber);
-                    StorageManager.pushBplusNode(this.treeId, rightNode.pageNumber, rightNode, pageOrder);
+                    StorageManager.pushBplusNode(this.treeId, rightNode.pageNumber, rightNode);
                     newParent.reflectUp(rightNode.values.get(0), this, rightNode);
                     setRoot(newParent);
                 }else {
-                    BplusTreeNode parent = StorageManager.getBplusNode(this.treeId, this.parentPointer, pageOrder);
+                    BplusTreeNode parent = StorageManager.getBplusNode(this.treeId, this.parentPointer);
                     parent.reflectUp(rightNode.values.get(0), this, rightNode);
                 }
             }
@@ -266,8 +271,8 @@ public class BplusTreeNode {
         } else {
             int childPageNum = pointer[0];
             //BplusTreeNode childNode = pages.get(childPageNum);
-            List<Integer> pageOrder = StorageManager.getPageOrder(this.treeId, true);
-            BplusTreeNode childNode = StorageManager.getBplusNode(this.treeId, childPageNum, pageOrder);
+            //List<Integer> pageOrder = StorageManager.getPageOrder(this.treeId, true);
+            BplusTreeNode childNode = StorageManager.getBplusNode(this.treeId, childPageNum);
             return childNode.addNewValue(newValue);
         }
     }
@@ -287,8 +292,8 @@ public class BplusTreeNode {
             int[] lastPointer = {rightNode.pageNumber, -1};
             pointers.add(lastPointer);
             //push this node to the buffer
-            List<Integer> pageOrder = StorageManager.getPageOrder(this.treeId, true);
-            StorageManager.pushBplusNode(this.treeId, this.pageNumber, this, pageOrder);
+            //List<Integer> pageOrder = StorageManager.getPageOrder(this.treeId, true);
+            StorageManager.pushBplusNode(this.treeId, this.pageNumber, this);
             return;
         }
         int value_index = 0;
@@ -312,7 +317,7 @@ public class BplusTreeNode {
         pointers.set(value_index+1, right_node_pointer);
 
         //push this node so updates are saved
-        List<Integer> pageOrder = StorageManager.getPageOrder(this.treeId, true);
+        //List<Integer> pageOrder = StorageManager.getPageOrder(this.treeId, true);
 
         // can't insert; needs to split
         if (values.size() > n){
@@ -322,7 +327,7 @@ public class BplusTreeNode {
             Object split_value = values.get(split_index);
             
             // split node in half
-            BplusTreeNode newRightNode = new BplusTreeNode(n, Collections.max(pageOrder)+1, this.treeId, parentPointer, primaryKeyType);
+            BplusTreeNode newRightNode = new BplusTreeNode(n, Catalog.getTreeNumPages(this.treeId)+1, this.treeId, parentPointer, primaryKeyType);
             
             // copy values and pointers from old node to split nodes
             List<Object> oldValues = new ArrayList<>(values);
@@ -343,40 +348,41 @@ public class BplusTreeNode {
             Object reflectUpValue = newRightNode.values.remove(0);
 
             //put the new page at the end
-            pageOrder = StorageManager.rewriteTableFileHeader(treeId, pageOrder.size(), Collections.max(pageOrder)+1, true);
+            //pageOrder = StorageManager.rewriteTableFileHeader(treeId, pageOrder.size(), Collections.max(pageOrder)+1, true);
+            Catalog.addTreesNumPages(treeId);
 
             //push leftNode
-            StorageManager.pushBplusNode(treeId, this.pageNumber, this, pageOrder);
+            StorageManager.pushBplusNode(treeId, this.pageNumber, this);
             //push rightNode
-            StorageManager.pushBplusNode(treeId, newRightNode.pageNumber, newRightNode, pageOrder);
+            StorageManager.pushBplusNode(treeId, newRightNode.pageNumber, newRightNode);
 
             // update all children of right node to point to right node as parent
             for(int[] pointer : newRightNode.pointers) {
                 if(pointer[0] != -1){
-                    BplusTreeNode child = StorageManager.getBplusNode(treeId, pointer[0], pageOrder);
+                    BplusTreeNode child = StorageManager.getBplusNode(treeId, pointer[0]);
                     child.setParent(newRightNode.pageNumber);
-                    StorageManager.pushBplusNode(treeId, child.pageNumber, child, pageOrder);
+                    StorageManager.pushBplusNode(treeId, child.pageNumber, child);
                 } 
             }
 
             //handles what happens at a root
             if (this.parentPointer == -1){
-                BplusTreeNode newParent = new BplusTreeNode(n,Collections.max(pageOrder)+1, this.treeId, -1, primaryKeyType);
-                pageOrder = StorageManager.rewriteTableFileHeader(this.treeId, pageOrder.size(), Collections.max(pageOrder)+1, true);
-                StorageManager.pushBplusNode(this.treeId, newParent.pageNumber, newParent, pageOrder);
+                BplusTreeNode newParent = new BplusTreeNode(n,Catalog.getTreeNumPages(treeId)+1, this.treeId, -1, primaryKeyType);
+                //pageOrder = StorageManager.rewriteTableFileHeader(this.treeId, pageOrder.size(), Collections.max(pageOrder)+1, true);
+                Catalog.addTreesNumPages(treeId);
+                StorageManager.pushBplusNode(this.treeId, newParent.pageNumber, newParent);
 
                 this.setParent(newParent.pageNumber);
-                StorageManager.pushBplusNode(this.treeId, this.pageNumber, this, pageOrder);
+                StorageManager.pushBplusNode(this.treeId, this.pageNumber, this);
                 newRightNode.setParent(newParent.pageNumber);
-                StorageManager.pushBplusNode(this.treeId, newRightNode.pageNumber, newRightNode, pageOrder);
+                StorageManager.pushBplusNode(this.treeId, newRightNode.pageNumber, newRightNode);
                 newParent.reflectUp(reflectUpValue, this, newRightNode);
                 setRoot(newParent);
             } else {
-                BplusTreeNode parent = StorageManager.getBplusNode(this.treeId, this.parentPointer, pageOrder);
+                BplusTreeNode parent = StorageManager.getBplusNode(this.treeId, this.parentPointer);
                 parent.reflectUp(reflectUpValue, this, newRightNode);
             }
         }
-
     }
 
     /**
@@ -404,7 +410,7 @@ public class BplusTreeNode {
      * @return leaf with value
      * @throws IOException
      */
-    private BplusTreeNode traversBplusTree(Object value, List<Integer> pageOrder) throws IOException{
+    private BplusTreeNode traversBplusTree(Object value) throws IOException{
         //if it made it to the leaf node, return the leaf node
         if (this.pointers.get(0)[1] != -1){
             return this;
@@ -412,12 +418,12 @@ public class BplusTreeNode {
 
         for (int i = 0; i < this.values.size(); i++){
             if (lessThan(value, values.get(i))){
-                BplusTreeNode child = StorageManager.getBplusNode(this.treeId, this.pointers.get(i)[0], pageOrder);
-                return child.traversBplusTree(value, pageOrder);
+                BplusTreeNode child = StorageManager.getBplusNode(this.treeId, this.pointers.get(i)[0]);
+                return child.traversBplusTree(value);
             }
         }
-        BplusTreeNode child = StorageManager.getBplusNode(this.treeId, this.pointers.get(values.size())[0], pageOrder);
-        return child.traversBplusTree(value, pageOrder);
+        BplusTreeNode child = StorageManager.getBplusNode(this.treeId, this.pointers.get(values.size())[0]);
+        return child.traversBplusTree(value);
     }
 
     /**
@@ -428,8 +434,8 @@ public class BplusTreeNode {
      * @throws IOException
      */
     public void updatePagePointer(Object first, Object last, int newPageId) throws IOException{
-        List<Integer> pageOrder = StorageManager.getPageOrder(this.treeId, true);
-        BplusTreeNode currentNode = traversBplusTree(first, pageOrder);
+        //List<Integer> pageOrder = StorageManager.getPageOrder(this.treeId, true);
+        BplusTreeNode currentNode = traversBplusTree(first);
         int currentIndex = 0; //index in the pointers array
         while (lessThan(currentNode.values.get(currentIndex), first)){
             currentIndex += 1;
@@ -444,7 +450,7 @@ public class BplusTreeNode {
             if (currentPointers.get(currentIndex)[0] == -1){
                 end = true;
             }else{
-                currentNode = StorageManager.getBplusNode(this.treeId, currentPointers.get(currentIndex)[0], pageOrder);
+                currentNode = StorageManager.getBplusNode(this.treeId, currentPointers.get(currentIndex)[0]);
                 currentIndex = 0;
                 currentPointers = currentNode.pointers;
             }
@@ -459,7 +465,7 @@ public class BplusTreeNode {
             
             if (!lessThan(currentValue, last)){
                 //push current node
-                StorageManager.pushBplusNode(this.treeId,currentNode.pageNumber, currentNode, pageOrder);
+                StorageManager.pushBplusNode(this.treeId,currentNode.pageNumber, currentNode);
                 break;
             }
 
@@ -468,12 +474,12 @@ public class BplusTreeNode {
             // if last value pointer in node, get next node
             if (currentIndex == currentPointers.size() - 2){
                 //push current node before getting new
-                StorageManager.pushBplusNode(this.treeId,currentNode.pageNumber, currentNode, pageOrder);
+                StorageManager.pushBplusNode(this.treeId,currentNode.pageNumber, currentNode);
                 //currentNode = pages.get(currentPointers.get(currentPointers.size() -1)[0]);
                 if (currentPointers.get(currentPointers.size() -1)[0] == -1){
                     break;
                 }
-                currentNode = StorageManager.getBplusNode(treeId, currentPointers.get(currentPointers.size() -1)[0], pageOrder);
+                currentNode = StorageManager.getBplusNode(treeId, currentPointers.get(currentPointers.size() -1)[0]);
                 currentIndex = 0;
                 currentPointers = currentNode.pointers;
             } else {
@@ -482,6 +488,5 @@ public class BplusTreeNode {
             //update with the next value
             currentValue = currentNode.values.get(currentIndex);
         }
-        
     }
 }

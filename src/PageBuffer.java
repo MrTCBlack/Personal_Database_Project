@@ -76,14 +76,14 @@ public class PageBuffer {
                 if (excess instanceof Page){
                     writePageToDisk(excessTableId, excessPageId, (Page)excess);
                 } else {
-                    writeBplusNodeToDisk(excessTableId, excessPageId, (BplusTreeNode)excess, pageOrder);
+                    writeBplusNodeToDisk(excessTableId, excessPageId, (BplusTreeNode)excess);
                 }
             }  
         }
 
         // Ensure buffer does not exceed its limit
         if (cache.size() > bufferSize) {
-            evictLRUPage(0, false);
+            evictLRUPage();
         }
     }
 
@@ -127,7 +127,7 @@ public class PageBuffer {
             if (!getTreeNode){
                 page = readPageFromDisk(tableId, pageId);
             }else {
-                page = readBPlusNodeFromDisk(tableId, pageId, pageOrder, primaryKey);
+                page = readBPlusNodeFromDisk(tableId, pageId, primaryKey);
             }
             pushPage(tableId, pageId, page);
         }
@@ -196,7 +196,7 @@ public class PageBuffer {
      *                      Used when table file header is being rewritten and all pages are being shifted
      * @throws IOException
      */
-    private void evictLRUPage(int shiftAmount, boolean shiftTree) throws IOException{
+    private void evictLRUPage() throws IOException{
         int keyToEvict = cache.getLRUKey();
         Object pageToEvict = cache.remove(keyToEvict);
         if (pageToEvict != null) {
@@ -212,19 +212,19 @@ public class PageBuffer {
             //String filePath = dbLocation + "/tables/table" + tableId + ".tbl";
             File tableFile = new File(filePath);
             if (tableFile.exists()){
-                List<Integer> pageOrder;
+                //List<Integer> pageOrder;
                 if (pageToEvict instanceof Page){
-                    if (shiftTree){
+                    /*if (shiftTree){
                         shiftAmount = 0;
-                    }
-                    pageOrder = getPageOrder(tableId, true);
-                    writePageToDisk(tableId, pageId, (Page)pageToEvict, pageOrder, shiftAmount);
+                    }*/
+                    //pageOrder = getPageOrder(tableId, true);
+                    writePageToDisk(tableId, pageId, (Page)pageToEvict);
                 } else {
-                    if (!shiftTree){
+                    /*if (!shiftTree){
                         shiftAmount = 0;
-                    }
-                    pageOrder = getPageOrder(tableId, false);
-                    writeBplusNodeToDisk(tableId, pageId, (BplusTreeNode)pageToEvict, pageOrder, shiftAmount);
+                    }*/
+                    //pageOrder = getPageOrder(tableId, false);
+                    writeBplusNodeToDisk(tableId, pageId, (BplusTreeNode)pageToEvict);
                 }
             }   
         }
@@ -252,7 +252,7 @@ public class PageBuffer {
      */
     public void flush(int shiftAmount, boolean shiftTree) throws IOException{
         while(cache.size() != 0){
-            evictLRUPage(shiftAmount, shiftTree);
+            evictLRUPage();
         }
     }
 
@@ -460,7 +460,7 @@ public class PageBuffer {
     /**
      * write out bplusnode
      */
-    private void writeBplusNodeToDisk(int tableId, int pageId, BplusTreeNode node, List<Integer> pageOrder, int shiftAmount) {
+    private void writeBplusNodeToDisk(int tableId, int pageId, BplusTreeNode node) {
         String filePath = dbLocation + "/indexes/tree" + tableId + ".bpt";
     
         try (RandomAccessFile raf = new RandomAccessFile(filePath, "rw");
@@ -469,13 +469,48 @@ public class PageBuffer {
     
 
             // Skip Header
-            raf.skipBytes(4+(4*pageOrder.size()));
+            //raf.skipBytes(4+(4*pageOrder.size()));
+
+            /*LOGIC: Read in the pageID from the current tree page
+             *          If the read in pageID matches the given pageId,
+             *              then move back 4 bytes and write the page with metadata
+             *          Else, move 8 bytes past the metadata and move the page pointer forward a page size
+             *          If a read is done and the position of the buffer is still 0,
+             *              then have reached the end of the file and should write there
+            */
+            ByteBuffer pageIDBuffer = ByteBuffer.allocate(4);
+            int pageIDRead = -1;
+            while (pageIDRead != pageId){
+                channel.read(pageIDBuffer);
+
+                if (pageIDBuffer.position() == 0){
+                    break;
+                }
+
+                pageIDBuffer.flip();
+                pageIDRead = pageIDBuffer.getInt();
+
+                //move file pointer back 4 bytes
+                //channel.position(channel.position() - 4);
+
+                /*If the pageID read in is not the same as the given pageID,
+                 *      then skip over this page so that the next page can be looked at
+                 * Otherwise, the while loop will end and the page will be written
+                */
+                if (pageIDRead != pageId){
+                    raf.skipBytes(pageSize+8); //skipp 8 bytes past rest of metadata and then the pageSize
+                    pageIDBuffer.clear(); //clear buffer so new pageID can be read in
+                } else {
+                    //move file pointer back 4 bytes
+                    channel.position(channel.position() - 4);
+                }
+            }
 
             // Move to correct page position
-            for(int pid: pageOrder) {
+            /*for(int pid: pageOrder) {
                 if(pid==pageId) break;
                 raf.skipBytes(pageSize+12);
-            }
+            }*/
                 
             // 1. Write metadata
             buffer.putInt(node.getPageNumber());           // page number
@@ -484,7 +519,7 @@ public class PageBuffer {
 
             //write out metadata
             buffer.flip();
-            channel.position(raf.getFilePointer() + shiftAmount);
+            channel.position(raf.getFilePointer());
             channel.write(buffer);
             //set position back to 0 and limit back to pageSize
             buffer.clear();
@@ -527,7 +562,7 @@ public class PageBuffer {
     /**
      * read in bplusnode
      */
-    private BplusTreeNode readBPlusNodeFromDisk(int tableId, int pageId, List<Integer> pageOrder, AttributeSchema primaryKey) {
+    private BplusTreeNode readBPlusNodeFromDisk(int tableId, int pageId, AttributeSchema primaryKey) {
         String filePath = dbLocation + "/indexes/tree" + tableId + ".bpt";
     
         try (RandomAccessFile raf = new RandomAccessFile(filePath, "r");
@@ -535,14 +570,48 @@ public class PageBuffer {
             ByteBuffer buffer = ByteBuffer.allocate(pageSize);
     
             // Skip Header
-            raf.skipBytes(4+(4*pageOrder.size()));
+            //raf.skipBytes(4+(4*pageOrder.size()));
 
+            /*LOGIC: Read in the pageID from the current tree page
+             *          If the read in pageID matches the given pageId,
+             *              then move back 4 bytes and write the page with metadata
+             *          Else, move 8 bytes past the metadata and move the page pointer forward a page size
+             *          If a read is done and the position of the buffer is still 0,
+             *              then have reached the end of the file and should write there
+            */
+            ByteBuffer pageIDBuffer = ByteBuffer.allocate(4);
+            int pageIDRead = -1;
+            while (pageIDRead != pageId){
+                channel.read(pageIDBuffer);
+
+                /*if (pageIDBuffer.position() == 0){
+                    break;
+                }*/
+
+                pageIDBuffer.flip();
+                pageIDRead = pageIDBuffer.getInt();
+
+                //move file pointer back 4 bytes
+                //channel.position(channel.position() - 4);
+
+                /*If the pageID read in is not the same as the given pageID,
+                 *      then skip over this page so that the next page can be looked at
+                 * Otherwise, the while loop will end and the page will be written
+                */
+                if (pageIDRead != pageId){
+                    raf.skipBytes(pageSize+8); //skipp 8 bytes past rest of metadata and then the pageSize
+                    pageIDBuffer.clear(); //clear buffer so new pageID can be read in
+                } else {
+                    //move file pointer back 4 bytes
+                    channel.position(channel.position() - 4);
+                }
+            }
 
             // Move to correct page position
-            for(int pid: pageOrder) {
+            /*for(int pid: pageOrder) {
                 if(pid==pageId) break;
                 raf.skipBytes(pageSize+12);
-            }
+            }*/
 
             channel.position(raf.getFilePointer());
             int numBytesRead = channel.read(buffer);
@@ -573,7 +642,6 @@ public class PageBuffer {
                         values.add(sb.toString());
                     } 
                     case VARCHAR -> {
-                        /*TODO: Char doesn't have an int; needs to be it's own thing */
                         int len = buffer.getInt();
                         StringBuilder sb = new StringBuilder();
                         for (int j = 0; j < len; j++) sb.append(buffer.getChar());
