@@ -414,16 +414,19 @@ public class StorageManager {
             }
         }
 
-        List<Integer> pageOrder = getPageOrder(tableId, false); 
+        //List<Integer> pageOrder = getPageOrder(tableId, false);
+        //List<Integer> pageOrder = Catalog.getTablePageOrder(tableId); 
 
         // Loops through the pageOrder to get the page and then the records
-        for(int k = 0; k < pageOrder.size(); k++){
-            Page page = (Page)pageBuffer.getPage(tableId, pageOrder.get(k), pageOrder, 0, primaryKeyAttributeSchema, false);
-            List<Record> records = page.getRecords();
+        //for(int k = 0; k < pageOrder.size(); k++){
+        for (Integer pageID: Catalog.getTablePageOrder(tableId)){
+            Page page = (Page)pageBuffer.getPage(tableId, pageID, primaryKeyAttributeSchema, false);
+            //List<Record> records = page.getRecords();
             
             // Search for the record with the given primary key
-            for (int i = 0; i < records.size(); i++){  
-                Record curRecord = records.get(i); // Current record
+            //for (int i = 0; i < records.size(); i++){
+            for (Record curRecord: page.getRecords()){  
+                //Record curRecord = records.get(i); // Current record
                 byte[] primaryKeyByte = getPrimaryKeyValue(curRecord, attributeSchemas, primaryKeyIndex);
             
                 //Check if the primary key is a boolean
@@ -648,8 +651,8 @@ public class StorageManager {
      * @return the Page retrieved
      * @throws IOException
      */
-    public Page getPage(int tableId, int pageId, List<Integer> pageOrder) throws IOException{
-        return (Page)pageBuffer.getPage(tableId, pageId, pageOrder, 0, null, false);
+    public Page getPage(int tableId, int pageId) throws IOException{
+        return (Page)pageBuffer.getPage(tableId, pageId, null, false);
     }
 
     /**
@@ -924,7 +927,8 @@ public class StorageManager {
     /**
      * Function for inserting using the BplusTree 
      */
-    private List<Integer> insertBplusTree(Record record, int tableId) throws Exception{
+    //private List<Integer> insertBplusTree(Record record, int tableId) throws Exception{
+    private void insertBplusTree(Record record, int tableId) throws Exception{
         TableSchema tableSchema = catalog.getTableSchemaByNum(tableId);
         Object primaryKeyValue = record.getPrimaryKeyValue(tableSchema);
         AttributeSchema primaryKeyAttributeSchema = null;
@@ -955,7 +959,7 @@ public class StorageManager {
             Catalog.addPageAtIndex(tableId, 0, newPage.getPageId());
             pageBuffer.pushPage(tableId, 1, newPage);
 
-            return newPageOrder;
+            return;
         }
 
         //insert into page at index
@@ -1001,10 +1005,10 @@ public class StorageManager {
             Catalog.addPageAtIndex(tableId, pageOrderIndex, newPage.getPageId());
             pageBuffer.pushPage(tableId, originalPageID, page);
             pageBuffer.pushPage(tableId, newPage.getPageId(), newPage);
-            return newPageOrder;
+            //return newPageOrder;
         }else{
             pageBuffer.pushPage(tableId, originalPageID, page);
-            return oldPageOrder;
+            //return oldPageOrder;
         }
     }
 
@@ -1022,7 +1026,8 @@ public class StorageManager {
      * @throws IOException
      */
     //public List<Integer> insertRecord(Record record, int tableId, List<Integer> oldPageOrder, boolean addAtEnd, boolean indexOn) throws Exception{
-    public List<Integer> insertRecord(Record record, int tableId, boolean addAtEnd, boolean indexOn) throws Exception{
+    //public List<Integer> insertRecord(Record record, int tableId, boolean addAtEnd, boolean indexOn) throws Exception{
+    public void insertRecord(Record record, int tableId, boolean addAtEnd, boolean indexOn) throws Exception{
         //file should always exist and if empty, just has pagesize of 0
         String filePath;
         if (indexOn){
@@ -1034,7 +1039,8 @@ public class StorageManager {
         File tableFile = new File(filePath);
         if (!tableFile.exists()){
             System.out.println("table"+tableId+" does not exist.");
-            return null;
+            //return null;
+            return;
         }
         //try (RandomAccessFile raf = new RandomAccessFile(filePath, "r"); FileChannel channel = raf.getChannel()) {
 
@@ -1072,11 +1078,13 @@ public class StorageManager {
                 //List<Integer> newPageOrder = rewriteTableFileHeader(tableId, 0, 1, false);
                 pageBuffer.pushPage(tableId, newPage.getPageId(), newPage);
                 //raf.close();
-                return newPageOrder;
+                return;
             }
 
             if (indexOn){
-                return insertBplusTree(record, tableId, treePageOrder, oldPageOrder);
+                //return insertBplusTree(record, tableId);
+                insertBplusTree(record, tableId);
+                return;
             }
 
             int pageOrderIndex = 0; //the current index in the pageOrder array
@@ -1123,12 +1131,12 @@ public class StorageManager {
                             pageBuffer.pushPage(tableId, newPage.getPageId(), newPage);
 
                             //raf.close();
-                            return newPageOrder;
+                            return;
                         }
                         pageBuffer.pushPage(tableId, pageId,page);
 
                         //raf.close();
-                        return oldPageOrder;
+                        return;
                     }
                     pageBuffer.pushPage(tableId, pageId,page);
                     pageOrderIndex += 1;
@@ -1173,15 +1181,15 @@ public class StorageManager {
                     pageBuffer.pushPage(tableId, newPage.getPageId(), newPage);
 
                     //raf.close();
-                    return newPageOrder;
+                    return;
                 }
                 pageBuffer.pushPage(tableId, page.getPageId(), page);
 
                 //raf.close();
-                return oldPageOrder;
+                return;
             }
             //raf.close();
-            return null;
+            //return null;
         //}
     }
 

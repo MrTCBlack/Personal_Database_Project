@@ -94,15 +94,16 @@ public class DMLFunctions {
         }
 
         catalog.addTable(new_table, false);
-        List<Integer> page_nums = storage_manager.getPageOrder(table.getTableNum(), false);
+        //List<Integer> page_nums = storage_manager.getPageOrder(table.getTableNum(), false);
+        List<Integer> page_nums = Catalog.getTablePageOrder(table.getTableNum());
         // loop through all pages
         for(Integer page_num : page_nums){
-            Page cur_page = storage_manager.getPage(table.getTableNum(), page_num, page_nums);
+            Page cur_page = storage_manager.getPage(table.getTableNum(), page_num);
             List<Record> page_records = cur_page.getRecords();
             // copy over all records from previous table
             for(Record record : page_records){
-                List<Integer> new_table_page_nums = storage_manager.getPageOrder(new_table.getTableNum(), false);
-                storage_manager.insertRecord(record, new_table.getTableNum(), new_table_page_nums, true, false);
+                //List<Integer> new_table_page_nums = storage_manager.getPageOrder(new_table.getTableNum(), false);
+                storage_manager.insertRecord(record, new_table.getTableNum(), true, false);
             }
         }
         return new_table;
@@ -146,17 +147,21 @@ public class DMLFunctions {
 
         catalog.addTable(combined_table, false);
         
-        List<Integer> table1_page_nums = storage_manager.getPageOrder(table1.getTableNum(), false);
         int table1_num = table1.getTableNum();
-        List<Integer> table2_page_nums = storage_manager.getPageOrder(table2.getTableNum(), false);
+        //List<Integer> table1_page_nums = storage_manager.getPageOrder(table1.getTableNum(), false);
+        List<Integer> table1_page_nums = Catalog.getTablePageOrder(table1_num);
+        //int table1_num = table1.getTableNum();
         int table2_num = table2.getTableNum();
+        //List<Integer> table2_page_nums = storage_manager.getPageOrder(table2.getTableNum(), false);
+        List<Integer> table2_page_nums = Catalog.getTablePageOrder(table2_num);
+        //int table2_num = table2.getTableNum();
 
         // perform a block nested-loop join on the two tables
         for(int table1_page_num : table1_page_nums){
-            Page table1_cur_page = storage_manager.getPage(table1_num, table1_page_num, table1_page_nums);
+            Page table1_cur_page = storage_manager.getPage(table1_num, table1_page_num);
             List<Record> table1_page_records = table1_cur_page.getRecords();
             for(int table2_page_num : table2_page_nums){
-                Page table2_cur_page = storage_manager.getPage(table2_num, table2_page_num, table2_page_nums);
+                Page table2_cur_page = storage_manager.getPage(table2_num, table2_page_num);
                 List<Record> table2_page_records = table2_cur_page.getRecords();
                 for(Record table1_record : table1_page_records){
                     for(Record table2_record : table2_page_records){
@@ -181,8 +186,8 @@ public class DMLFunctions {
 
                         // insert combined record into combined table
                         Record combined_record = new Record(combined_data);
-                        List<Integer> combined_table_page_nums = storage_manager.getPageOrder(combined_table_num, false);
-                        storage_manager.insertRecord(combined_record, combined_table_num, combined_table_page_nums, true, false);
+                        //List<Integer> combined_table_page_nums = storage_manager.getPageOrder(combined_table_num, false);
+                        storage_manager.insertRecord(combined_record, combined_table_num, true, false);
                     }
                 }
             }
@@ -344,6 +349,7 @@ public class DMLFunctions {
      * @return resulting table schema
      * @throws Exception any input errors for the where clause
      */
+    /*TODO: Do a full analysis of where and rework it so that it actually works */
     public static TableSchema where(TableSchema schema, String input, Catalog catalog, StorageManager storageManager, List<TableSchema> fromTablesSchemas) throws Exception {
 
         if(input.equals("")){
@@ -365,11 +371,12 @@ public class DMLFunctions {
 
         catalog.addTable(temp, false);
 
-        List<Integer> page_nums = storageManager.getPageOrder(schema.getTableNum(), false);
+        //List<Integer> page_nums = storageManager.getPageOrder(schema.getTableNum(), false);
+        List<Integer> page_nums = Catalog.getTablePageOrder(schema.getTableNum());
         // loop through all pages
         for(Integer page_num : page_nums){
 
-            Page cur_page = storageManager.getPage(schema.getTableNum(), page_num, page_nums);
+            Page cur_page = storageManager.getPage(schema.getTableNum(), page_num);
             List<Record> page_records = cur_page.getRecords();
             
             for(Record record : page_records){
@@ -387,8 +394,8 @@ public class DMLFunctions {
 
                     if(evaluateCondition(root, row, fromTablesSchemas.get(0).getTableName(), fromTablesSchemas.size())){
 
-                        List<Integer> oldOrder = storageManager.getPageOrder(temp.getTableNum(), false);
-                        storageManager.insertRecord(record, temp.getTableNum(), oldOrder, true, false);
+                        //List<Integer> oldOrder = storageManager.getPageOrder(temp.getTableNum(), false);
+                        storageManager.insertRecord(record, temp.getTableNum(), true, false);
     
                     }
 
@@ -816,10 +823,11 @@ public class DMLFunctions {
         catalog.addTable(newSchema, false);
 
         int oldTableNum = oldSchema.getTableNum();
-        List<Integer> oldPageNums = storageManager.getPageOrder(oldTableNum, false);
+        //List<Integer> oldPageNums = storageManager.getPageOrder(oldTableNum, false);
+        List<Integer> oldPageNums = Catalog.getTablePageOrder(oldTableNum);
 
         for (Integer oldPage : oldPageNums) {
-            Page page = storageManager.getPage(oldTableNum, oldPage, oldPageNums);
+            Page page = storageManager.getPage(oldTableNum, oldPage);
             List<Record> records = page.getRecords();
 
             for (Record oldRecord : records) {
@@ -835,8 +843,8 @@ public class DMLFunctions {
 
                 byte[] newData = DMLParser.convert_values_to_record(projectedTypes, projectedTypes, projectedValues);
                 Record newRec = new Record(newData);
-                List<Integer> newPageOrder = storageManager.getPageOrder(newSchema.getTableNum(), false);
-                storageManager.insertRecord(newRec, newSchema.getTableNum(), newPageOrder, true, false);
+                //List<Integer> newPageOrder = storageManager.getPageOrder(newSchema.getTableNum(), false);
+                storageManager.insertRecord(newRec, newSchema.getTableNum(), true, false);
             }
         }
 
@@ -904,15 +912,16 @@ public class DMLFunctions {
         }
 
         catalog.addTable(orderby_table, false);
-        List<Integer> page_nums = storage_manager.getPageOrder(table.getTableNum(), false);
+        //List<Integer> page_nums = storage_manager.getPageOrder(table.getTableNum(), false);
+        List<Integer> page_nums = Catalog.getTablePageOrder(table.getTableNum());
         // loop through all pages
         for(Integer page_num : page_nums){
-            Page cur_page = storage_manager.getPage(table.getTableNum(), page_num, page_nums);
+            Page cur_page = storage_manager.getPage(table.getTableNum(), page_num);
             List<Record> page_records = cur_page.getRecords();
             // copy over all records from previous table
             for(Record record : page_records){
-                List<Integer> new_table_page_nums = storage_manager.getPageOrder(orderby_table.getTableNum(), false);
-                storage_manager.insertRecord(record, orderby_table.getTableNum(), new_table_page_nums, false, false);
+                //List<Integer> new_table_page_nums = storage_manager.getPageOrder(orderby_table.getTableNum(), false);
+                storage_manager.insertRecord(record, orderby_table.getTableNum(), false, false);
             }
         }
         
@@ -922,13 +931,13 @@ public class DMLFunctions {
         return orderby_table;
     }
 
-    public static void delete_temp_table(Catalog catalog, List<TableSchema> to_delete) throws IOException{
+    /*public static void delete_temp_table(Catalog catalog, List<TableSchema> to_delete) throws IOException{
         for(int j = 0; j < to_delete.size(); j++){
             System.out.println("Deleting table: " + to_delete.get(j).getTableName()); // delete the temporary table
             String table_name = to_delete.get(j).getTableName();
             catalog.removeTableByName(table_name);
         }
-    }
+    }*/
     
     /**
     /**

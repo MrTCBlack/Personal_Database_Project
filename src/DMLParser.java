@@ -30,7 +30,11 @@ public class DMLParser {
             List<AttributeSchema> attributes = table_schema.getAttributes();
 
             // grab all page numbers from table
-            List<Integer> pageOrder = storage_manager.getPageOrder(table_num, false);
+            //List<Integer> pageOrder = storage_manager.getPageOrder(table_num, false);
+
+            /************************************************************************************
+             * TODO: Redo how null's are taken care of
+             */
 
             // loop through user given records
             for(List<String> record : records){
@@ -112,6 +116,8 @@ public class DMLParser {
                         }else{
                             value = record.get(i);
                         }
+                        /*TODO: Change insert so that the duplicates are checked at insert time and not before;
+                                This save reads and rights */
                         if(!catalog.isIndexOn()){
                             Record duplicate = storage_manager.getRecord(table_num, value);
                             if(!(duplicate == null)){
@@ -139,9 +145,10 @@ public class DMLParser {
                     // check if attribute is unique
                     if(attributes.get(i).isUnique() && !given_type.equals(AttributeType.NULL)){
                         
+                        List<Integer> pageOrder = Catalog.getTablePageOrder(table_num);//reget pageOrder each time incase it has changed
                         // loop through all pages
                         for(Integer page_num : pageOrder){
-                            Page cur_page = storage_manager.getPage(table_num, page_num, pageOrder);
+                            Page cur_page = storage_manager.getPage(table_num, page_num);
                             List<Record> page_records = cur_page.getRecords();
                             // convert the page's records into printable values
                             for(Record page_record : page_records){
@@ -159,7 +166,7 @@ public class DMLParser {
                 byte[] data = convert_values_to_record(schema_attribute_types, given_attribute_types, record_values);
                 Record inserted_record = new Record(data);
                 try {
-                    pageOrder = storage_manager.insertRecord(inserted_record, table_num, pageOrder, false, catalog.isIndexOn());
+                    storage_manager.insertRecord(inserted_record, table_num, false, catalog.isIndexOn());
                 } catch (Exception e) {
                     System.out.println("Error: " + e.getMessage());
                     //e.printStackTrace();
@@ -430,10 +437,11 @@ public class DMLParser {
             print_header(attributes, column_width);
     
             // grab all page numbers from table
-            List<Integer> page_nums = storage_manager.getPageOrder(table_num, false);
+            //List<Integer> page_nums = storage_manager.getPageOrder(table_num, false);
+            List<Integer> page_nums = Catalog.getTablePageOrder(table_num);
             // loop through all pages
             for(Integer page_num : page_nums){
-                Page cur_page = storage_manager.getPage(table_num, page_num, page_nums);
+                Page cur_page = storage_manager.getPage(table_num, page_num);
                 List<Record> page_records = cur_page.getRecords();
                 // convert the page's records into printable values
                 for(Record record : page_records){
@@ -676,11 +684,12 @@ public class DMLParser {
             System.out.println();
         }
         int table_num = table_schema.getTableNum();
-        List<Integer> page_nums = storage_manager.getPageOrder(table_num, false);
+        //List<Integer> page_nums = storage_manager.getPageOrder(table_num, false);
+        List<Integer> page_nums = Catalog.getTablePageOrder(table_num);
         int num_pages = page_nums.size();
         int num_records = 0;
         for(int page_num : page_nums){
-            Page cur_page = storage_manager.getPage(table_num, page_num, page_nums);
+            Page cur_page = storage_manager.getPage(table_num, page_num);
             num_records += cur_page.getNumRecords();
         }
          
