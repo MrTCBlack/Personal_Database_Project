@@ -686,9 +686,10 @@ public class StorageManager {
      * @throws IOException
      */
     public boolean checkForSameValue(int tableId, TableSchema tableSchema, int attributeIndex, String value) throws IOException{
-        List<Integer> pageOrder = getPageOrder(tableId, false);
+        //List<Integer> pageOrder = getPageOrder(tableId, false);
+        List<Integer> pageOrder = Catalog.getTablePageOrder(tableId);
         for (int pageId : pageOrder){
-            Page page = getPage(tableId, pageId, pageOrder);
+            Page page = getPage(tableId, pageId);
             List<Record> records = page.getRecords();
             for (Record record : records){
                 if(record.checkForValue(tableSchema, attributeIndex, value)){
@@ -788,12 +789,12 @@ public class StorageManager {
      * @param whereClauses the criteria to check the record by
      * @return true if the record needs to be updated
      */
-    private boolean needsUpdating(Record record, List<String> whereClauses){
+    /*private boolean needsUpdating(Record record, List<String> whereClauses){
         if (whereClauses.isEmpty()){
             return true;
         }
         return false;
-    }
+    }*/
 
     /**
      * Updates the values of records that meet the criteria of the where clause
@@ -851,15 +852,17 @@ public class StorageManager {
 
             //Rewrite the header and push the new page
             //This will make a table's Bplus file always start with one page before inserts begin
-            rewriteTableFileHeader(newTableId, 0, 1, true);
-            List<Integer> pageOrder = getPageOrder(newTableId, true);
-            StorageManager.pushBplusNode(newTableId, 1, root, pageOrder);
+            //rewriteTableFileHeader(newTableId, 0, 1, true);
+            Catalog.addPageAtIndex(newTableId, 0, 1);
+            //List<Integer> pageOrder = getPageOrder(newTableId, true);
+            StorageManager.pushBplusNode(newTableId, 1, root);
 
             Catalog.saveCatalog();
         }
 
-        List<Integer> oldPageOrder = getPageOrder(oldTableId, false);
-        List<Integer> newPageOrder = new ArrayList<>();
+        //List<Integer> oldPageOrder = getPageOrder(oldTableId, false);
+        List<Integer> oldPageOrder = Catalog.getTablePageOrder(oldTableId);
+        //List<Integer> newPageOrder = new ArrayList<>();
         List<TableSchema> passToWhere = new ArrayList<>();
         passToWhere.add(tableSchema);
         passToWhere.add(tableSchema);
@@ -875,7 +878,7 @@ public class StorageManager {
         //For a unique attribute, if a record is updated, only one can be
         //For all records that will not be changed, they are inserted into the new table normally
         for (int pageId : oldPageOrder){
-            Page page = getPage(oldTableId, pageId, oldPageOrder);
+            Page page = getPage(oldTableId, pageId);
             List<Record> recordsList = page.getRecords();
             for (Record record : recordsList){
                 Record newRecord = record;
@@ -904,9 +907,9 @@ public class StorageManager {
                 //  then need to insert normally because of possible new order
                 //else, can just insert next record at the end
                 if (tableSchema.getAttributes().get(attributeIndex).isPrimaryKey()){
-                    newPageOrder = insertRecord(newRecord, newTableId, newPageOrder, false, catalog.isIndexOn());
+                    insertRecord(newRecord, newTableId, false, catalog.isIndexOn());
                 } else {
-                    newPageOrder = insertRecord(newRecord, newTableId, newPageOrder, true, catalog.isIndexOn());
+                    insertRecord(newRecord, newTableId, true, catalog.isIndexOn());
                 }
             }
         }
@@ -1246,24 +1249,26 @@ public class StorageManager {
             catalog.setRoot(newTableId, 1);
             catalog.saveCatalog();
 
-            StorageManager.rewriteTableFileHeader(newTableId, 0, 1, true);
-            List<Integer> pageOrder = StorageManager.getPageOrder(newTableId, true);
-            StorageManager.pushBplusNode(newTableId, 1, root, pageOrder);
+            //StorageManager.rewriteTableFileHeader(newTableId, 0, 1, true);
+            Catalog.addPageAtIndex(newTableId, 0, 1);
+            //List<Integer> pageOrder = StorageManager.getPageOrder(newTableId, true);
+            StorageManager.pushBplusNode(newTableId, 1, root);
         }
 
         
         try (RandomAccessFile raf = new RandomAccessFile(originalFilePath, "rw"); FileChannel channel = raf.getChannel()) {
 
-            List<Integer> pageOrder = getPageOrder(oldTableId, false);
-            List<Integer> newPageOrder = new ArrayList<>();
+            //List<Integer> pageOrder = getPageOrder(oldTableId, false);
+            List<Integer> pageOrder = Catalog.getTablePageOrder(oldTableId);
+            //List<Integer> newPageOrder = new ArrayList<>();
 
             for (int pageId : pageOrder){
-                Page oldPage = (Page) pageBuffer.getPage(oldTableId, pageId, pageOrder, 0, null, false);
+                Page oldPage = (Page) pageBuffer.getPage(oldTableId, pageId, null, false);
                 List<Record> oldRecords = oldPage.getRecords();
                 for (Record record : oldRecords){
                     Record newRecord = record.removeAttribute(attrName, catalog.getTableSchemaByNum(oldTableId));
                     //insertRecord(newRecord, newTableId, pageOrder);
-                    newPageOrder = insertRecord(newRecord, newTableId, newPageOrder, true, catalog.isIndexOn());
+                    insertRecord(newRecord, newTableId, true, catalog.isIndexOn());
                 }
             }
         }
@@ -1323,15 +1328,17 @@ public class StorageManager {
             // List<Integer> pageOrder = StorageManager.getPageOrder(lastUsedId, true);
             // StorageManager.pushBplusNode(lastUsedId, 1, root, pageOrder);
 
+            //TODO:Move saveCatalog to the bottom
             catalog.setRoot(new_table_id, 1);
             catalog.saveCatalog();
 
-            StorageManager.rewriteTableFileHeader(new_table_id, 0, 1, true);
-            List<Integer> pageOrder = StorageManager.getPageOrder(new_table_id, true);
-            StorageManager.pushBplusNode(new_table_id, 1, root, pageOrder);
+            //StorageManager.rewriteTableFileHeader(new_table_id, 0, 1, true);
+            Catalog.addPageAtIndex(new_table_id, 0, 1);
+            //List<Integer> pageOrder = StorageManager.getPageOrder(new_table_id, true);
+            StorageManager.pushBplusNode(new_table_id, 1, root);
         }
 
-
+        //TODO: Does this cause problems when delete all rows and then adding new value?
         // if no where condition, all are deleted
         if(where_condition.equals("")){
             //remove old table file
@@ -1342,36 +1349,37 @@ public class StorageManager {
 
         boolean error_encountered = false;
         String error_message = "";
-        try (RandomAccessFile raf = new RandomAccessFile(original_file_path, "rw"); FileChannel channel = raf.getChannel()) {
+        //try (RandomAccessFile raf = new RandomAccessFile(original_file_path, "rw"); FileChannel channel = raf.getChannel()) {
 
-            List<Integer> page_order = getPageOrder(old_table_id, false);
-            List<Integer> new_page_order = new ArrayList<>();
+            //List<Integer> page_order = getPageOrder(old_table_id, false);
+            List<Integer> page_order = Catalog.getTablePageOrder(old_table_id);
+            //List<Integer> new_page_order = new ArrayList<>();
             TableSchema schema = catalog.getTableSchemaByNum(new_table_id);
             List<TableSchema> dud_schemas = new ArrayList<>();
             dud_schemas.add(schema);
             dud_schemas.add(schema);
 
             for (int page_id : page_order){
-                Page old_page = (Page)pageBuffer.getPage(old_table_id, page_id, page_order, 0, null, false);
+                Page old_page = (Page)pageBuffer.getPage(old_table_id, page_id, null, false);
                 List<Record> records = old_page.getRecords();
                 for (Record record : records){
                     if(error_encountered){
-                        new_page_order = insertRecord(record, new_table_id, new_page_order, true, catalog.isIndexOn());
+                        insertRecord(record, new_table_id, true, catalog.isIndexOn());
                     }else{
                         try {
                             boolean satisfies_where = DMLFunctions.whereRecord(schema, record, where_condition, dud_schemas);
                             if(!satisfies_where){
-                                new_page_order = insertRecord(record, new_table_id, new_page_order, true, catalog.isIndexOn());
+                                insertRecord(record, new_table_id, true, catalog.isIndexOn());
                             }
                         } catch (Exception e) {
-                            new_page_order = insertRecord(record, new_table_id, new_page_order, true, catalog.isIndexOn());
+                            insertRecord(record, new_table_id, true, catalog.isIndexOn());
                             error_message = e.getMessage() + "\nError";
                             error_encountered = true;
                         }
                     }
                 }
             }
-        }
+        //}
         //remove old table file
         deleteTable(old_table_id, catalog.isIndexOn());
         if(error_encountered){
@@ -1436,24 +1444,26 @@ public class StorageManager {
             catalog.setRoot(newTableId, 1);
             catalog.saveCatalog();
 
-            StorageManager.rewriteTableFileHeader(newTableId, 0, 1, true);
-            List<Integer> pageOrder = StorageManager.getPageOrder(newTableId, true);
-            StorageManager.pushBplusNode(newTableId, 1, root, pageOrder);
+            //StorageManager.rewriteTableFileHeader(newTableId, 0, 1, true);
+            Catalog.addPageAtIndex(newTableId, 0, 1);
+            //List<Integer> pageOrder = StorageManager.getPageOrder(newTableId, true);
+            StorageManager.pushBplusNode(newTableId, 1, root);
         }
 
-        try (RandomAccessFile raf = new RandomAccessFile(originalFilePath, "rw"); FileChannel channel = raf.getChannel()) {
-            List<Integer> pageOrder = getPageOrder(oldTableId, false);
-            List<Integer> newPageOrder = new ArrayList<>();
+        //try (RandomAccessFile raf = new RandomAccessFile(originalFilePath, "rw"); FileChannel channel = raf.getChannel()) {
+            //List<Integer> pageOrder = getPageOrder(oldTableId, false);
+            List<Integer> pageOrder = Catalog.getTablePageOrder(oldTableId);
+            //List<Integer> newPageOrder = new ArrayList<>();
 
             for (int pageId : pageOrder){
-                Page oldPage = (Page)pageBuffer.getPage(oldTableId, pageId, pageOrder, 0, null, false);
+                Page oldPage = (Page)pageBuffer.getPage(oldTableId, pageId, null, false);
                 List<Record> oldRecords = oldPage.getRecords();
                 for (Record record : oldRecords){
                     Record newRecord = record.addAttribute(newAttribute, defaultValue, catalog.getTableSchemaByNum(oldTableId));
-                    newPageOrder = insertRecord(newRecord, newTableId, newPageOrder, true, catalog.isIndexOn());
+                    insertRecord(newRecord, newTableId, true, catalog.isIndexOn());
                 }
             }
-        }
+        //}
 
         //remove old table file
         deleteTable(oldTableId, catalog.isIndexOn());
